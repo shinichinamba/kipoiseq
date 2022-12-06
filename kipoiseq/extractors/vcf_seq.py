@@ -330,8 +330,8 @@ class SingleVariantVCFSeqExtractor(_BaseVCFSeqExtractor):
     on given vcf file.
     """
 
-    def extract(self, interval, anchor=None, sample_id=None, fixed_len=True):
-        for variant in self.vcf.fetch_variants(interval, sample_id):
+    def extract(self, interval, anchor=None, sample_id=None, phase=None, fixed_len=True):
+        for variant in self.vcf.fetch_variants(interval, sample_id, phase):
             yield self.variant_extractor.extract(
                 interval,
                 variants=[variant],
@@ -345,10 +345,10 @@ class SingleSeqVCFSeqExtractor(_BaseVCFSeqExtractor):
     Fetch sequence in which all variant applied based on given vcf file.
     """
 
-    def extract(self, interval, anchor=None, sample_id=None, fixed_len=True):
+    def extract(self, interval, anchor=None, sample_id=None, phase=None, fixed_len=True):
         return self.variant_extractor.extract(
             interval,
-            variants=self.vcf.fetch_variants(interval, sample_id),
+            variants=self.vcf.fetch_variants(interval, sample_id, phase, whole_chrom=fixed_len),
             anchor=anchor,
             fixed_len=fixed_len
         )

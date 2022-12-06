@@ -25,10 +25,21 @@ class MultiSampleVCF(VariantFetcher, VCF):
         VCF.__init__(self, *args, **kwargs, strict_gt=True)
         self.sample_mapping = dict(zip(self.samples, range(len(self.samples))))
 
-    def fetch_variants(self, interval, sample_id=None):
-        for cy_variant in self(self._region(interval)):
+    def fetch_variants(self, interval, sample_id=None, phase=None, whole_chrom=False):
+        if whole_chrom:
+            region = interval.chrom
+        else:
+            region = self._region(interval)
+        for cy_variant in self(region):
             for variant in self._variants_from_cyvcf2(cy_variant):
-                if sample_id is None or self.has_variant(variant, sample_id):
+                if sample_id is None:
+                    has_variant = True
+                else:
+                    if phase is None:
+                        has_variant = self.has_variant(variant, sample_id)
+                    else:
+                        has_variant = self.has_variant_phased(variant, sample_id, phase)
+                if has_variant:
                     yield variant
 
     def _variants_from_cyvcf2(self, cy_variant):
@@ -51,9 +62,29 @@ class MultiSampleVCF(VariantFetcher, VCF):
         gt_type = variant.source.gt_types[self.sample_mapping[sample_id]]
         return self._has_variant_gt(gt_type)
 
+    def has_variant_phased(self, variant: Variant, sample_id: str, phase: int) -> bool:
+        genotypes = variant.source.genotypes[self.sample_mapping[sample_id]]
+        return self._has_variant_phased(genotypes, phase)
+
     @staticmethod
     def _has_variant_gt(gt_type: int) -> bool:
-        return gt_type != 0 and gt_type != 3
+        return gt_type != 0 and gt_type != 2
+    
+    @staticmethod
+    def _has_variant_phased(genotypes: list, phase: int) -> bool:
+        """
+        # Arguments
+            phase: phasing index, either int(0) or int(1).
+        """
+        if phase == 0 or phase == 1:
+            if genotypes[2]:
+                return genotypes[phase] == 1
+            else:
+                logging.warning(
+                    'Unphased genotype was ignored')
+                return False
+        else:
+            raise ValueError("phase must be int(0) or int(1)")
 
     def __next__(self):
         return Variant.from_cyvcf(super().__next__())
@@ -76,14 +107,17 @@ class MultiSampleVCF(VariantFetcher, VCF):
         variants = iter(self)
         yield from batch_iter(variants, batch_size=batch_size)
 
-    def query_variants(self, intervals: List[Interval], sample_id=None,
+    def query_variants(self, intervals: List[Interval], sample_id=None, phase=None,
                        progress=False) -> VariantIntervalQueryable:
         """Fetch variants for given multi-intervals from vcf file
         for sample if sample id is given.
+        To consider phasing, specify phase as either int(0) or int(1).
+        If phase is given, unphased variants will be ignored.
 
         # Arguments
             intervals (List[pybedtools.Interval]): list of Interval objects
             sample_id (str, optional): sample id in vcf file.
+            phase (int, optional): phase of the variant to be considered
 
         # Returns
           VCFQueryable: queryable object whihc allow you to query the
@@ -100,7 +134,7 @@ class MultiSampleVCF(VariantFetcher, VCF):
                     .to_vcf(output_path)
             ```
         """
-        pairs = [(self.fetch_variants(i, sample_id=sample_id), i)
+        pairs = [(self.fetch_variants(i, sample_id=sample_id, phase=phase), i)
                  for i in intervals]
         return VariantIntervalQueryable(self, pairs, progress=progress)
 
