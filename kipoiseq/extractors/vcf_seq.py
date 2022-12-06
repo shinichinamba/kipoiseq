@@ -24,11 +24,13 @@ class IntervalSeqBuilder(list):
     String builder for `pyfaidx.Sequence` and `Interval` objects.
     """
 
-    def restore(self, sequence: Sequence):
+    def restore(self, sequence: Sequence, fixed_len=True):
         """
         Args:
           sequence: `pyfaidx.Sequence` which convert all interval inside
             to `Seqeunce` objects.
+          fixed_len: if True, the return sequence will have the same length
+            as the `interval` by N-padding
         """
         for i, interval in enumerate(self):
             # interval.end can be bigger than interval.start
@@ -37,7 +39,26 @@ class IntervalSeqBuilder(list):
             if type(self[i]) == Interval:
                 start = interval.start - sequence.start
                 end = start + interval_len
-                self[i] = sequence[start: end]
+                end_overflow = end - sequence.end + sequence.start
+                if (end < 0 or interval.start > sequence.end):
+                    raise ValueError('Intervals should be at least partly overlapped with the `Sequence` object')
+                if fixed_len:
+                    if (start < 0):
+                        pad_start=(-start) * 'N'
+                        start = 0
+                    else:
+                        pad_start=''
+                    if (end_overflow > 0):
+                        pad_end=end_overflow * 'N'
+                        end = end - end_overflow
+                    else:
+                        pad_end=''
+                    self[i] = pad_start + sequence[start: end] + pad_end
+                else:
+                    start = max(start, 0)
+                    if (end_overflow > 0):
+                        end = end - end_overflow
+                    self[i] = sequence[start: end]
 
     def _concat(self):
         for sequence in self:
@@ -167,8 +188,8 @@ class VariantSeqExtractor(BaseExtractor):
 
         # 5. fetch the sequence and restore intervals in builder
         seq = self._fetch(interval, istart, iend)
-        up_sb.restore(seq)
-        down_sb.restore(seq)
+        up_sb.restore(seq, fixed_len=fixed_ren)
+        down_sb.restore(seq, fixed_len=fixed_ren)
 
         # 6. Concate sequences from the upstream and downstream splits. Concat
         # upstream and downstream sequence. Cut to fix the length.
