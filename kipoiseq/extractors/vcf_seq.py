@@ -40,8 +40,6 @@ class IntervalSeqBuilder(list):
                 start = interval.start - sequence.start
                 end = start + interval_len
                 end_overflow = end - sequence.end + sequence.start
-                if (end < 0 or interval.start > sequence.end):
-                    raise ValueError('Intervals should be at least partly overlapped with the `Sequence` object')
                 if fixed_len:
                     if (start < 0):
                         pad_start=(-start) * 'N'
@@ -61,9 +59,6 @@ class IntervalSeqBuilder(list):
                         start = start,
                         end = end)
                 else:
-                    start = max(start, 0)
-                    if (end_overflow > 0):
-                        end = end - end_overflow
                     self[i] = sequence[start: end]
 
     def _concat(self):
