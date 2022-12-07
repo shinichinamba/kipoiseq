@@ -39,19 +39,20 @@ class IntervalSeqBuilder(list):
             if type(self[i]) == Interval:
                 start = interval.start - sequence.start
                 end = start + interval_len
-                end_overflow = end - sequence.end + sequence.start
                 if fixed_len:
-                    if (start < 0):
-                        pad_start=(-start) * 'N'
+                    start_overflow = min(-start, interval_len)
+                    end_overflow = min(end - sequence.end + sequence.start, interval_len)
+                    if (start_overflow > 0):
+                        pad_start = start_overflow * 'N'
                         seq_start = 0
                     else:
-                        pad_start=''
+                        pad_start = ''
                         seq_start = start
                     if (end_overflow > 0):
-                        pad_end=end_overflow * 'N'
+                        pad_end = end_overflow * 'N'
                         seq_end = end - end_overflow
                     else:
-                        pad_end=''
+                        pad_end = ''
                         seq_end = end
                     self[i] = Sequence(
                         name = sequence.name,
