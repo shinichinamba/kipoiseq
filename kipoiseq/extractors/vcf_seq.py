@@ -1,4 +1,5 @@
 import abc
+import logging
 from typing import Union
 
 from pyfaidx import Sequence, complement
@@ -41,21 +42,21 @@ class IntervalSeqBuilder(list):
                 end = start + interval_len
                 if fixed_len:
                     start_overflow = min(-start, interval_len)
-                    end_overflow = min(end - sequence.end + sequence.start, interval_len)
+                    sequence_len = sequence.end - sequence.start
+                    end_overflow = min(end - sequence_len, interval_len)
                     if (start_overflow > 0):
                         pad_start = start_overflow * 'N'
-                        start = 0
+                        start = max(0, start)
                     else:
                         pad_start = ''
-                        start = start
+                        start = min(start, sequence_len)
                     if (end_overflow > 0):
                         pad_end = end_overflow * 'N'
-                        end = end - end_overflow
+                        end = min(end, sequence_len)
                     else:
                         pad_end = ''
                         end = max(0, end)
                     self[i] = Sequence(
-                        name = sequence.name,
                         seq = pad_start + sequence[start: end].seq + pad_end,
                         start = interval.start,
                         end = interval.start + interval_len)
@@ -189,7 +190,7 @@ class VariantSeqExtractor(BaseExtractor):
             upstream_variants, interval, anchor, iend)
 
         # 5. fetch the sequence and restore intervals in builder
-        seq = self._fetch(interval, istart, iend)
+        seq = self._fetch(interval, istart, iend, error_if_invalid = not fixed_len)
         up_sb.restore(seq, fixed_len=fixed_len)
         down_sb.restore(seq, fixed_len=fixed_len)
 
@@ -246,11 +247,15 @@ class VariantSeqExtractor(BaseExtractor):
         iend = interval.end
 
         for ref, alt in up_variants:
+            if iend <= ref.start:
+                break
             diff_len = len(alt) - len(ref)
             if diff_len < 0:
                 iend -= diff_len
 
         for ref, alt in down_variants:
+            if istart >= ref.end:
+                break
             diff_len = len(alt) - len(ref)
             if diff_len < 0:
                 istart += diff_len
@@ -288,11 +293,30 @@ class VariantSeqExtractor(BaseExtractor):
 
         return up_sb
 
-    def _fetch(self, interval, istart, iend):
+    def _fetch(self, interval, istart, iend, error_if_invalid = True):
         # fetch interval, ignore strand
+        if istart < 0:
+            if error_if_invalid:
+                raise ValueError(
+                    'Requested start coordinate was negative and set to 0: %s' % str(istart))
+            else:
+                logging.warning(
+                    'Requested start coordinate was negative and set to 0: %s' % str(istart))
+
+            istart = 0
         seq = self.ref_seq_extractor.extract(
             Interval(interval.chrom, istart, iend))
-        seq = Sequence(name=interval.chrom, seq=seq, start=istart, end=iend)
+        iend_fetched = istart+len(seq)
+        if iend_fetched != iend:
+            if error_if_invalid:
+                raise ValueError(
+                    'Requested end coordinate was larger than that of Sequence and the former was set to the latter: %s to %s'
+                    % (str(iend), str(iend_fetched)))
+            else:
+                logging.warning(
+                    'Requested end coordinate was larger than that of Sequence and the former was set to the latter: %s to %s'
+                    % (str(iend), str(iend_fetched)))
+        seq = Sequence(name=interval.chrom, seq=seq, start=istart, end=iend_fetched)
         return seq
 
     @staticmethod

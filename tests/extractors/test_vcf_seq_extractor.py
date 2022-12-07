@@ -178,6 +178,29 @@ def test_extract(variant_seq_extractor):
         interval, variants, anchor=10, fixed_len=False)
     assert seq == 'ACG'
 
+    interval = Interval('chr1', 4999, 5001, strand='+')
+    with pytest.raises(ValueError):
+        variant_seq_extractor.extract(
+            interval, variants, anchor=10, fixed_len=False)
+    seq = variant_seq_extractor.extract(
+        interval, variants, anchor=10, fixed_len=True)
+    assert seq == 'AN'
+
+    interval = Interval('chr1', -1, 2, strand='+')
+    with pytest.raises(ValueError):
+        variant_seq_extractor.extract(
+            interval, variants, anchor=10, fixed_len=False)
+    seq = variant_seq_extractor.extract(
+        interval, variants, anchor=10, fixed_len=True)
+    assert seq == 'NAC'
+
+    interval = Interval('chr1', 27, 30, strand='+')
+    seq = variant_seq_extractor.extract(
+        interval, variants, anchor=30, fixed_len=False)
+    assert seq == 'TA'
+    seq = variant_seq_extractor.extract(
+        interval, variants, anchor=30, fixed_len=True)
+    assert seq == 'ATA'
 
 @pytest.fixture
 def single_variant_vcf_seq_extractor():

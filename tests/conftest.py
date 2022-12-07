@@ -1,6 +1,7 @@
 import pytest
 
 vcf_file = 'tests/data/test.vcf.gz'
+phased_vcf_file = 'tests/data/test.phased.vcf.gz'
 test_with_multiple_variants = 'tests/data/test_with_multiple_variants.vcf.gz'
 sample_5kb_fasta_file = 'tests/data/sample.5kb.fa'
 gtf_file = 'tests/data/sample.gtf'

@@ -1,5 +1,5 @@
 import pytest
-from conftest import vcf_file, sample_5kb_fasta_file, test_with_multiple_variants
+from conftest import vcf_file, phased_vcf_file, sample_5kb_fasta_file, test_with_multiple_variants
 from kipoiseq.dataclasses import Variant, Interval
 from kipoiseq.extractors.vcf_query import NumberVariantQuery
 from kipoiseq.extractors.vcf import MultiSampleVCF
@@ -17,6 +17,9 @@ intervals = [
 def multi_sample_vcf():
     return MultiSampleVCF(vcf_file)
 
+@pytest.fixture
+def multi_sample_phased_vcf():
+    return MultiSampleVCF(phased_vcf_file)
 
 def test_MultiSampleVCF__next__(multi_sample_vcf):
     variant = next(multi_sample_vcf)
@@ -43,6 +46,17 @@ def test_MultiSampleVCF_fetch_variant(multi_sample_vcf):
     interval = Interval('chr1', 7, 12)
     assert len(list(multi_sample_vcf.fetch_variants(interval))) == 0
     assert len(list(multi_sample_vcf.fetch_variants(interval, 'NA00003'))) == 0
+
+def test_MultiSampleVCF_fetch_variant_phase(multi_sample_phased_vcf):
+    interval = Interval('chr1', 3, 5)
+    assert len(list(multi_sample_phased_vcf.fetch_variants(interval, 'NA00003', 0))) == 0
+    assert len(list(multi_sample_phased_vcf.fetch_variants(interval, 'NA00002', 0))) == 1
+    assert len(list(multi_sample_phased_vcf.fetch_variants(interval, 'NA00002', 1))) == 0
+    assert len(list(multi_sample_phased_vcf.fetch_variants(interval, 'NA00002', 0, True))) == 2
+    assert len(list(multi_sample_phased_vcf.fetch_variants(interval, 'NA00002', 1, True))) == 2
+
+    interval = Interval('chr1', 25, 36)
+    assert len(list(multi_sample_phased_vcf.fetch_variants(interval, 'NA00001', 0))) == 0
 
 
 def test_MultiSampleVCF_query_variants(multi_sample_vcf):
