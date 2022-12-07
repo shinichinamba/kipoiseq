@@ -53,7 +53,7 @@ class IntervalSeqBuilder(list):
                         end = end - end_overflow
                     else:
                         pad_end=''
-                    self[i] = pad_start + sequence[start: end] + pad_end
+                    self[i] = Sequence(seq = pad_start + sequence[start: end].seq + pad_end)
                 else:
                     start = max(start, 0)
                     if (end_overflow > 0):
@@ -188,8 +188,8 @@ class VariantSeqExtractor(BaseExtractor):
 
         # 5. fetch the sequence and restore intervals in builder
         seq = self._fetch(interval, istart, iend)
-        up_sb.restore(seq, fixed_len=fixed_ren)
-        down_sb.restore(seq, fixed_len=fixed_ren)
+        up_sb.restore(seq, fixed_len=fixed_len)
+        down_sb.restore(seq, fixed_len=fixed_len)
 
         # 6. Concate sequences from the upstream and downstream splits. Concat
         # upstream and downstream sequence. Cut to fix the length.
