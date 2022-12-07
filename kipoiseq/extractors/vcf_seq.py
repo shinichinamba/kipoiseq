@@ -44,21 +44,21 @@ class IntervalSeqBuilder(list):
                     end_overflow = min(end - sequence.end + sequence.start, interval_len)
                     if (start_overflow > 0):
                         pad_start = start_overflow * 'N'
-                        seq_start = 0
+                        start = 0
                     else:
                         pad_start = ''
-                        seq_start = start
+                        start = start
                     if (end_overflow > 0):
                         pad_end = end_overflow * 'N'
-                        seq_end = end - end_overflow
+                        end = end - end_overflow
                     else:
                         pad_end = ''
-                        seq_end = end
+                        end = max(0, end)
                     self[i] = Sequence(
                         name = sequence.name,
-                        seq = pad_start + sequence[seq_start: seq_end].seq + pad_end,
-                        start = start,
-                        end = end)
+                        seq = pad_start + sequence[start: end].seq + pad_end,
+                        start = interval.start,
+                        end = interval.start + interval_len)
                 else:
                     self[i] = sequence[start: end]
 
