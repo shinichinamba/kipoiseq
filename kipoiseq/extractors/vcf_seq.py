@@ -24,7 +24,7 @@ class IntervalSeqBuilder(list):
     String builder for `pyfaidx.Sequence` and `Interval` objects.
     """
 
-    def restore(self, sequence: Sequence, fixed_len=True):
+    def restore(self, sequence: Sequence, fixed_len=False):
         """
         Args:
           sequence: `pyfaidx.Sequence` which convert all interval inside
@@ -45,15 +45,21 @@ class IntervalSeqBuilder(list):
                 if fixed_len:
                     if (start < 0):
                         pad_start=(-start) * 'N'
-                        start = 0
+                        seq_start = 0
                     else:
                         pad_start=''
+                        seq_start = start
                     if (end_overflow > 0):
                         pad_end=end_overflow * 'N'
-                        end = end - end_overflow
+                        seq_end = end - end_overflow
                     else:
                         pad_end=''
-                    self[i] = Sequence(seq = pad_start + sequence[start: end].seq + pad_end)
+                        seq_end = end
+                    self[i] = Sequence(
+                        name = sequence.name,
+                        seq = pad_start + sequence[seq_start: seq_end].seq + pad_end,
+                        start = start,
+                        end = end)
                 else:
                     start = max(start, 0)
                     if (end_overflow > 0):
