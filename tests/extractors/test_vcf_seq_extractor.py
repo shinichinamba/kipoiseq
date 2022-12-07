@@ -56,27 +56,27 @@ def test_interval_seq_builder_restore(interval_seq_builder):
 
     interval_seq_builder.append(Interval('chr1', 9, 11))
     interval_seq_builder.restore(sequence, fixed_len=True)
-    assert interval_seq_builder[8].seq == 'NC'
+    assert interval_seq_builder[9].seq == 'NC'
 
     interval_seq_builder.append(Interval('chr1', 19, 21))
     interval_seq_builder.restore(sequence, fixed_len=True) 
-    assert interval_seq_builder[9].seq == 'TN'
+    assert interval_seq_builder[10].seq == 'TN'
 
     interval_seq_builder.append(Interval('chr1', 23, 25))
     interval_seq_builder.restore(sequence, fixed_len=True) 
-    assert interval_seq_builder[9].seq == 'NN'
+    assert interval_seq_builder[11].seq == 'NN'
 
     interval_seq_builder.append(Interval('chr1', 5, 25))
     interval_seq_builder.restore(sequence, fixed_len=True) 
-    assert interval_seq_builder[9].seq == 'NNNNNCCCCATCGTTNNNNN'
+    assert interval_seq_builder[12].seq == 'NNNNNCCCCATCGTTNNNNN'
 
     interval_seq_builder.append(Interval('chr1', 11, 9))
     interval_seq_builder.restore(sequence, fixed_len=True)
-    assert interval_seq_builder[10].seq == ''
+    assert interval_seq_builder[13].seq == ''
 
     interval_seq_builder.append(Interval('chr1', 21, 19))
     interval_seq_builder.restore(sequence, fixed_len=True)
-    assert interval_seq_builder[11].seq == '' 
+    assert interval_seq_builder[14].seq == '' 
     
 
 def test_interval_seq_builder_concat(interval_seq_builder):
