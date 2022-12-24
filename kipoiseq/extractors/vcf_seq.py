@@ -144,6 +144,14 @@ class VariantSeqExtractor(BaseExtractor):
         Returns:
             A single sequence (`str`) with all the variants applied.
         """
+        first_half_results = self._extract_first_half(interval, variants, anchor, fixed_len)
+        return self._extract_second_half(interval, first_half_results, fixed_len, use_strand)
+    
+    def _extract_first_half(self, interval, variants, anchor, fixed_len):
+        """
+        The first half of the extract() function.
+        The extract() function was splitted for the ad-hoc speed up of SingleSeqVCFSeqExtractor.extract()
+        """
         # Preprocessing
         anchor = max(min(anchor, interval.end), interval.start)
         variant_pairs = self._variant_to_sequence(variants)
@@ -179,7 +187,15 @@ class VariantSeqExtractor(BaseExtractor):
                 interval, upstream_variants, downstream_variants)
         else:
             istart, iend = interval.start, interval.end
+        
+        return (anchor, istart, iend, upstream_variants, downstream_variants)
 
+
+    def _extract_second_half(self, interval, first_half_results, fixed_len, use_strand=None):
+        """
+        The second half of the extract() function
+        """
+        anchor, istart, iend, upstream_variants, downstream_variants = first_half_results
         # 4. Iterate from the anchor point outwards. At each
         # register the interval from which to take the reference sequence
         # as well as the interval for the variant
@@ -369,12 +385,20 @@ class SingleVariantVCFSeqExtractor(_BaseVCFSeqExtractor):
 class SingleSeqVCFSeqExtractor(_BaseVCFSeqExtractor):
     """
     Fetch sequence in which all variant applied based on given vcf file.
+    Use _extract_first_half() and _extract_second_half() directly for the ad-hoc speed up
     """
 
     def extract(self, interval, anchor=None, sample_id=None, phase=None, fixed_len=True):
-        return self.variant_extractor.extract(
-            interval,
-            variants=self.vcf.fetch_variants(interval, sample_id, phase, whole_chrom=fixed_len),
-            anchor=anchor,
-            fixed_len=fixed_len
-        )
+        # first, we try the sequence extraction with variants in the interval + padding windows
+        padding_width = max(int(interval.end - interval.start) * 0.05, 5)
+        padded_interval = Interval(interval.chrom, max(0, interval.start - padding_width), interval.end + padding_width)
+        variants = self.vcf.fetch_variants(padded_interval, sample_id, phase, whole_chrom=False)
+        first_half_results = self.variant_extractor._extract_first_half(interval, variants, anchor, fixed_len)
+        _, istart, iend, _, _ = first_half_results
+        if padded_interval.start <= max(0, istart) and iend <= padded_interval.end:
+            seq = self.variant_extractor._extract_second_half(interval, first_half_results, fixed_len)
+        else:
+            # If the width of the padding windows are insufficient, we use the variants in the entire chromosome for the sequence extraction
+            variants = self.vcf.fetch_variants(padded_interval, sample_id, phase, whole_chrom=True)
+            seq = self.variant_extractor.extract(interval, variants, anchor, fixed_len)
+        return seq
