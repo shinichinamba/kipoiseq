@@ -234,7 +234,7 @@ def test_single_seq_vcf_seq_extract_phased(single_seq_vcf_seq_extractor_phased):
     seq = single_seq_vcf_seq_extractor_phased.extract(interval, anchor=24, sample_id='NA00002', phase=1, fixed_len=True)
     assert seq == 'GATGC'
     
-    interval = Interval('chr1', 27, 30)
-    seq = single_seq_vcf_seq_extractor_phased.extract(interval, anchor=30, sample_id='NA00002', phase=1, fixed_len=True)
-    assert seq == 'ATG'
+    interval = Interval('chr1', 45, 50)
+    seq = single_seq_vcf_seq_extractor_phased.extract(interval, anchor=50, sample_id='NA00002', phase=1, fixed_len=True)
+    assert seq == 'TTGTA'
 
