@@ -389,16 +389,65 @@ class SingleSeqVCFSeqExtractor(_BaseVCFSeqExtractor):
     """
 
     def extract(self, interval, anchor=None, sample_id=None, phase=None, fixed_len=True):
-        # first, we try the sequence extraction with variants in the interval + padding windows
-        padding_width = max(int(interval.end - interval.start) * 0.05, 5)
-        padded_interval = Interval(interval.chrom, max(0, interval.start - padding_width), interval.end + padding_width)
-        variants = self.vcf.fetch_variants(padded_interval, sample_id, phase, whole_chrom=False)
-        first_half_results = self.variant_extractor._extract_first_half(interval, variants, anchor, fixed_len)
-        _, istart, iend, _, _ = first_half_results
-        if padded_interval.start <= max(0, istart) and iend <= padded_interval.end:
-            seq = self.variant_extractor._extract_second_half(interval, first_half_results, fixed_len)
+        variants=self.vcf.fetch_variants(interval, sample_id, phase)
+        if not fixed_len:
+            seq = self.variant_extractor.extract(
+                interval,
+                variants=variants,
+                anchor=anchor,
+                fixed_len=fixed_len)
         else:
-            # If the width of the padding windows are insufficient, we use the variants in the entire chromosome for the sequence extraction
-            variants = self.vcf.fetch_variants(padded_interval, sample_id, phase, whole_chrom=True)
-            seq = self.variant_extractor.extract(interval, variants, anchor, fixed_len)
+            # first, we try the sequence extraction with variants in the interval
+            anchor, istart, iend, upstream_variants, downstream_variants = self.variant_extractor._extract_first_half(
+                interval, variants, anchor, fixed_len)
+            
+            # We iteratively extend the interval if the interval is insufficient to get the fixed-length sequence due to deletions
+            downstream_additional_width = interval.start - istart
+            if downstream_additional_width > 0:
+                istart = interval.start
+            while downstream_additional_width > 0:
+                downstream_variants, istart, downstream_additional_width = self._add_downstream_variants(
+                    sample_id, phase, downstream_variants, interval.chrom, istart, anchor, downstream_additional_width)
+            
+            upstream_additional_width = iend - interval.end
+            if upstream_additional_width > 0:
+                iend = interval.end
+            while upstream_additional_width > 0:
+                upstream_variants, iend, upstream_additional_width = self._add_upstream_variants(
+                    sample_id, phase, upstream_variants, interval.chrom, iend, upstream_additional_width)
+            
+            # Getting the sequence
+            seq = self.variant_extractor._extract_second_half(
+                interval, (anchor, istart, iend, upstream_variants, downstream_variants), fixed_len)
         return seq
+
+    def _add_downstream_variants(self, sample_id, phase, downstream_variants, chrom, istart, anchor, additional_width):
+        # Get additional downstream variants
+        # We don't have to calculate the istart/iend precisely, 
+        # rather we'd like to update istart so that (anchor - istart) got equal to or larger than the required width
+        new_istart = istart - additional_width
+        add_down_variants = self.vcf.fetch_variants(Interval(chrom, max(0, new_istart), max(0, istart)), sample_id, phase)
+        add_down_variants = list(self.variant_extractor._variant_to_sequence(add_down_variants))
+        add_down_variants.sort(key=lambda x: x[0].start, reverse=True)
+        downstream_variants.extend(add_down_variants)
+        new_add_width = 0
+        for ref, alt in add_down_variants:
+            new_add_width -= len(alt) - len(ref)
+            if ref.end > anchor:
+                # This function is called only when there are some downstream deletions in the previous interval.
+                # Therefore, if the end position is larger than the anchor position, the variants must be overlapped with
+                # at least one deletions.
+                raise ValueError('There are at least two overlapped variants (Note that the consistency of variants is not routinely checked in this function)')
+        return (downstream_variants, new_istart, new_add_width)
+
+    def _add_upstream_variants(self, sample_id, phase, upstream_variants, chrom, iend, additional_width):
+        # Get additional upstream variants
+        new_iend = iend + additional_width
+        add_up_variants = self.vcf.fetch_variants(Interval(chrom, iend, new_iend), sample_id, phase)
+        add_up_variants = list(self.variant_extractor._variant_to_sequence(add_up_variants))
+        add_up_variants.sort(key=lambda x: x[0].start)
+        upstream_variants.extend(add_up_variants)
+        new_add_width = 0
+        for ref, alt in add_up_variants:
+            new_add_width -= len(alt) - len(ref)
+        return (upstream_variants, new_iend, new_add_width)

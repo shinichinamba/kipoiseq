@@ -1,5 +1,5 @@
 import pytest
-from conftest import vcf_file, sample_5kb_fasta_file
+from conftest import vcf_file, phased_vcf_file, sample_5kb_fasta_file
 from cyvcf2 import VCF
 from pyfaidx import Sequence
 from kipoiseq.dataclasses import Variant, Interval
@@ -223,3 +223,18 @@ def test_single_seq_vcf_seq_extract(single_seq_vcf_seq_extractor):
     interval = Interval('chr1', 2, 9)
     seq = single_seq_vcf_seq_extractor.extract(interval, anchor=3)
     assert seq == 'GCGAACG'
+
+@pytest.fixture
+def single_seq_vcf_seq_extractor_phased():
+    return SingleSeqVCFSeqExtractor(fasta_file, phased_vcf_file)
+
+
+def test_single_seq_vcf_seq_extract_phased(single_seq_vcf_seq_extractor):
+    interval = Interval('chr1', 24, 29)
+    seq = single_seq_vcf_seq_extractor_phased.extract(interval, anchor=24, sample_id='NA00002', phase=1, fixed_len=True)
+    assert seq == 'GATGC'
+    
+    interval = Interval('chr1', 27, 30)
+    seq = single_seq_vcf_seq_extractor_phased.extract(interval, anchor=30, sample_id='NA00002', phase=1, fixed_len=True)
+    assert seq == 'ATG'
+

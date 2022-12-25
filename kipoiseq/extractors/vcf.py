@@ -25,11 +25,8 @@ class MultiSampleVCF(VariantFetcher, VCF):
         VCF.__init__(self, *args, **kwargs, strict_gt=True)
         self.sample_mapping = dict(zip(self.samples, range(len(self.samples))))
 
-    def fetch_variants(self, interval, sample_id=None, phase=None, whole_chrom=False):
-        if whole_chrom:
-            region = interval.chrom
-        else:
-            region = self._region(interval)
+    def fetch_variants(self, interval, sample_id=None, phase=None):
+        region = self._region(interval)
         for cy_variant in self(region):
             for variant in self._variants_from_cyvcf2(cy_variant):
                 if sample_id is None:
