@@ -52,8 +52,6 @@ def test_MultiSampleVCF_fetch_variant_phase(multi_sample_phased_vcf):
     assert len(list(multi_sample_phased_vcf.fetch_variants(interval, 'NA00003', 0))) == 0
     assert len(list(multi_sample_phased_vcf.fetch_variants(interval, 'NA00002', 0))) == 1
     assert len(list(multi_sample_phased_vcf.fetch_variants(interval, 'NA00002', 1))) == 0
-    assert len(list(multi_sample_phased_vcf.fetch_variants(interval, 'NA00002', 0, True))) == 2
-    assert len(list(multi_sample_phased_vcf.fetch_variants(interval, 'NA00002', 1, True))) == 2
 
     interval = Interval('chr1', 25, 36)
     assert len(list(multi_sample_phased_vcf.fetch_variants(interval, 'NA00001', 0))) == 0

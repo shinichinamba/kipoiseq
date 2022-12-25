@@ -229,7 +229,7 @@ def single_seq_vcf_seq_extractor_phased():
     return SingleSeqVCFSeqExtractor(fasta_file, phased_vcf_file)
 
 
-def test_single_seq_vcf_seq_extract_phased(single_seq_vcf_seq_extractor):
+def test_single_seq_vcf_seq_extract_phased(single_seq_vcf_seq_extractor_phased):
     interval = Interval('chr1', 24, 29)
     seq = single_seq_vcf_seq_extractor_phased.extract(interval, anchor=24, sample_id='NA00002', phase=1, fixed_len=True)
     assert seq == 'GATGC'
