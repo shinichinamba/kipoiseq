@@ -428,7 +428,11 @@ class SingleSeqVCFSeqExtractor(_BaseVCFSeqExtractor):
         new_istart = istart - additional_width
         add_down_variants = self.vcf.fetch_variants(Interval(chrom, max(0, new_istart), max(0, istart)), sample_id, phase)
         add_down_variants = list(self.variant_extractor._variant_to_sequence(add_down_variants))
-        add_down_variants.sort(key=lambda x: x[0].start, reverse=True)
+        add_down_variants = sorted(
+            filter(lambda x: x[0].end <= istart, add_down_variants),
+            key=lambda x: x[0].start,
+            reverse=True
+        )
         downstream_variants.extend(add_down_variants)
         new_add_width = 0
         for ref, alt in add_down_variants:
@@ -445,7 +449,10 @@ class SingleSeqVCFSeqExtractor(_BaseVCFSeqExtractor):
         new_iend = iend + additional_width
         add_up_variants = self.vcf.fetch_variants(Interval(chrom, iend, new_iend), sample_id, phase)
         add_up_variants = list(self.variant_extractor._variant_to_sequence(add_up_variants))
-        add_up_variants.sort(key=lambda x: x[0].start)
+        add_up_variants = sorted(
+            filter(lambda x: x[0].start >= iend, add_up_variants),
+            key=lambda x: x[0].start
+        )
         upstream_variants.extend(add_up_variants)
         new_add_width = 0
         for ref, alt in add_up_variants:
