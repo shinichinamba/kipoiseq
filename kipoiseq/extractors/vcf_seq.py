@@ -145,20 +145,72 @@ class VariantSeqExtractor(BaseExtractor):
             A single sequence (`str`) with all the variants applied.
         """
         first_half_results = self._extract_first_half(interval, variants, anchor, fixed_len)
-        return self._extract_second_half(interval, first_half_results, fixed_len, use_strand)
+        return self._extract_second_half(interval, first_half_results, fixed_len, use_strand)[0]
+    
+    def batch_extract(self, intervals, variants, anchors, fixed_len=True, use_strand=None, **kwargs):
+        """
+        For conducting multiple extract() procedures for overlapping intervals
+
+        Args:
+            intervals: list of pybedtools.Interval Regions of interest from
+                which to query the sequence. 
+                Must be on the same chromosome. 0-based
+            variants: List[cyvcf2.Variant]: variants overlapping the `interval`.
+                can also be indels. 1-based
+            anchors: list of absolution position w.r.t. the interval start. (0-based).
+                Must have the same number as intervals.
+            fixed_len: if True, the return sequence will have the same length
+                as the `interval` (e.g. `interval.end - interval.start`)
+            use_strand (bool, optional): if True, the extracted sequence
+                is reverse complemented in case interval.strand == "-".
+                Overrides `self.use_strand`
+
+        Returns:
+            list of sequences (`str`) with all the variants applied.
+        """
+        # check
+        if not fixed_len:
+            raise NotImplementedError("Multiple extraction is only defined for fixed_len=True")
+            # This is because the new interval lengths considering InDels are not calculated.
+        if len(intervals) != len(anchors):
+            raise ValueError("The length of intervals is different from that of anchors")
+        if len(set([i.chrom for i in intervals])) != 1:
+            raise ValueError("All intervals must be on the same chromosome")
+        strands = [i.strand for i in intervals]
+        anchors = [max(min(a, i.end), i.start) for a, i in zip(anchors, intervals)]
+        # extract an all-inclusive sequence
+        inclusive_interval = Interval(intervals[0].chrom, min([i.start for i in intervals]), max([i.end for i in intervals]))
+        min_anchor, anchors, istart, iend, upstream_variants, downstream_variants = self._extract_first_half(
+            inclusive_interval, variants, anchors, fixed_len)
+        seq, new_anchors = self._extract_second_half(
+            inclusive_interval, (min_anchor, anchors, istart, iend, upstream_variants, downstream_variants), fixed_len, use_strand)
+        # postprocessing
+        starts_ends = [(i.start - anc + new_anc, i.end - anc + new_anc) for new_anc, anc, i in zip(new_anchors, anchors, intervals)]
+        seq_list = [seq[s:e] for s, e in starts_ends]
+        if use_strand is None:
+            use_strand = self.use_strand
+        if use_strand:
+            seq_list = [self._rc_if_strand(seq, strand) for seq, strand in zip(seq_list, strands)]
+        return seq_list
     
     def _extract_first_half(self, interval, variants, anchor, fixed_len):
         """
         The first half of the extract() function.
+        anchor can be either a integer of a list of integer.
         The extract() function was splitted for the ad-hoc speed up of SingleSeqVCFSeqExtractor.extract()
         """
         # Preprocessing
-        anchor = max(min(anchor, interval.end), interval.start)
+        if isinstance(anchor, int):
+            anchor = [max(min(anchor, interval.end), interval.start)]
+        else:
+            anchor = [max(min(i, interval.end), interval.start) for i in anchor]
+        min_anchor = min(anchor)
         variant_pairs = self._variant_to_sequence(variants)
 
-        # 1. Split variants overlapping with anchor
+        # 1. Split variants overlapping with anchors
         # and interval start end if not fixed_len
-        variant_pairs = self._split_overlapping(variant_pairs, anchor)
+        for anc in set(anchor):
+            variant_pairs = self._split_overlapping(variant_pairs, anc)
 
         if not fixed_len:
             variant_pairs = self._split_overlapping(
@@ -171,12 +223,14 @@ class VariantSeqExtractor(BaseExtractor):
         # 2. split the variants into upstream and downstream
         # and sort the variants in each interval
         upstream_variants = sorted(
-            filter(lambda x: x[0].start >= anchor, variant_pairs),
+            filter(lambda x: x[0].start >= min_anchor, variant_pairs),
             key=lambda x: x[0].start
         )
-
+        
+        # For many cases, variants are already coordinate-sorted
+        variant_pairs.reverse()
         downstream_variants = sorted(
-            filter(lambda x: x[0].start < anchor, variant_pairs),
+            filter(lambda x: x[0].start < min_anchor, variant_pairs),
             key=lambda x: x[0].start,
             reverse=True
         )
@@ -188,22 +242,23 @@ class VariantSeqExtractor(BaseExtractor):
         else:
             istart, iend = interval.start, interval.end
         
-        return (anchor, istart, iend, upstream_variants, downstream_variants)
+        return (min_anchor, anchor, istart, iend, upstream_variants, downstream_variants)
 
 
     def _extract_second_half(self, interval, first_half_results, fixed_len, use_strand=None):
         """
         The second half of the extract() function
         """
-        anchor, istart, iend, upstream_variants, downstream_variants = first_half_results
+        min_anchor, anchor, istart, iend, upstream_variants, downstream_variants = first_half_results
         # 4. Iterate from the anchor point outwards. At each
         # register the interval from which to take the reference sequence
-        # as well as the interval for the variant
+        # as well as the interval for the variant.
+        # Anchor positions are updated while processing upstream variants
         down_sb = self._downstream_builder(
-            downstream_variants, interval, anchor, istart)
+            downstream_variants, interval, min_anchor, istart)
 
-        up_sb = self._upstream_builder(
-            upstream_variants, interval, anchor, iend)
+        up_sb, anchor = self._upstream_builder(
+            upstream_variants, interval, min_anchor, iend, anchor)
 
         # 5. fetch the sequence and restore intervals in builder
         seq = self._fetch(interval, istart, iend, error_if_invalid = not fixed_len)
@@ -215,9 +270,12 @@ class VariantSeqExtractor(BaseExtractor):
         down_str = down_sb.concat()
         up_str = up_sb.concat()
 
+        anchor_diff = len(down_str) - min_anchor
+        anchor = [anc + anchor_diff for anc in anchor]
+
         if fixed_len:
             down_str, up_str = self._cut_to_fix_len(
-                down_str, up_str, interval, anchor)
+                down_str, up_str, interval, min_anchor)
 
         seq = down_str + up_str
 
@@ -226,7 +284,18 @@ class VariantSeqExtractor(BaseExtractor):
         if use_strand and interval.strand == '-':
             # reverse-complement
             seq = complement(seq)[::-1]
+            seq_len = len(seq)
+            anchor = [seq_len - anc for anc in anchor]
 
+        return (seq, anchor)
+    
+    @staticmethod
+    def _rc_if_strand(seq, strand):
+        """
+        Reverse-complement if strand == "-"
+        """
+        if strand == '-':
+            seq = complement(seq)[::-1]
         return seq
 
     @staticmethod
@@ -295,19 +364,22 @@ class VariantSeqExtractor(BaseExtractor):
         return down_sb
 
     @staticmethod
-    def _upstream_builder(up_variants, interval, anchor, iend):
+    def _upstream_builder(up_variants, interval, anchor, iend, anchor_list):
         up_sb = IntervalSeqBuilder()
 
         prev = anchor
+        new_anchor_list = anchor_list.copy()
         for ref, alt in up_variants:
             if ref.start >= iend:
                 break
+            diff_len = len(alt) - len(ref)
+            new_anchor_list = [new_anc + diff_len if ref.start < anc else new_anc for new_anc, anc in zip(new_anchor_list, anchor_list)]
             up_sb.append(Interval(interval.chrom, prev, ref.start))
             up_sb.append(alt)
             prev = ref.end
         up_sb.append(Interval(interval.chrom, prev, iend))
 
-        return up_sb
+        return (up_sb, new_anchor_list)
 
     def _fetch(self, interval, istart, iend, error_if_invalid = True):
         # fetch interval, ignore strand
@@ -385,49 +457,75 @@ class SingleVariantVCFSeqExtractor(_BaseVCFSeqExtractor):
 class SingleSeqVCFSeqExtractor(_BaseVCFSeqExtractor):
     """
     Fetch sequence in which all variant applied based on given vcf file.
-    Use _extract_first_half() and _extract_second_half() directly for the ad-hoc speed up
+    Using _extract_first_half() and _extract_second_half() directly for the ad-hoc speed up
     """
 
     def extract(self, interval, anchor=None, sample_id=None, phase=None, fixed_len=True):
-        variants=self.vcf.fetch_variants(interval, sample_id, phase)
         if not fixed_len:
             seq = self.variant_extractor.extract(
                 interval,
-                variants=variants,
+                variants=self.vcf.fetch_variants(interval, sample_id, phase),
                 anchor=anchor,
                 fixed_len=fixed_len)
         else:
-            # first, we try the sequence extraction with variants in the interval
-            anchor, istart, iend, upstream_variants, downstream_variants = self.variant_extractor._extract_first_half(
-                interval, variants, anchor, fixed_len)
-            
-            # We iteratively extend the interval if the interval is insufficient to get the fixed-length sequence due to deletions
-            downstream_additional_width = interval.start - istart
-            if downstream_additional_width > 0:
-                istart = interval.start
-            while downstream_additional_width > 0:
-                downstream_variants, istart, downstream_additional_width = self._add_downstream_variants(
-                    sample_id, phase, downstream_variants, interval.chrom, istart, anchor, downstream_additional_width)
-            
-            upstream_additional_width = iend - interval.end
-            if upstream_additional_width > 0:
-                iend = interval.end
-            while upstream_additional_width > 0:
-                upstream_variants, iend, upstream_additional_width = self._add_upstream_variants(
-                    sample_id, phase, upstream_variants, interval.chrom, iend, upstream_additional_width)
-            
-            # Getting the sequence
-            seq = self.variant_extractor._extract_second_half(
-                interval, (anchor, istart, iend, upstream_variants, downstream_variants), fixed_len)
+            seq = self._extract_fixed_len(interval, anchor, sample_id, phase)[0]
         return seq
 
-    def _add_downstream_variants(self, sample_id, phase, downstream_variants, chrom, istart, anchor, additional_width):
+    def batch_extract(self, intervals, anchors=None, sample_id=None, phase=None, fixed_len=True):
+        # check
+        if not fixed_len:
+            raise NotImplementedError("Multiple extraction is only defined for fixed_len=True")
+            # This is because the new interval lengths considering InDels are not calculated.
+        if len(intervals) != len(anchors):
+            raise ValueError("The length of intervals is different from that of anchors")
+        if len(set([i.chrom for i in intervals])) != 1:
+            raise ValueError("All intervals must be on the same chromosome")
+        strands = [i.strand for i in intervals]
+        anchors = [max(min(a, i.end), i.start) for a, i in zip(anchors, intervals)]
+        # extract an all-inclusive sequence
+        inclusive_interval = Interval(intervals[0].chrom, min([i.start for i in intervals]), max([i.end for i in intervals]))
+        seq, anchors, new_anchors = self._extract_fixed_len(inclusive_interval, anchors, sample_id, phase)
+        # postprocessing
+        starts_ends = [(i.start - anc + new_anc, i.end - anc + new_anc) for new_anc, anc, i in zip (new_anchors, anchors, intervals)]
+        seq_list = [seq[s:e] for s, e in starts_ends]
+        return [self.variant_extractor._rc_if_strand(seq, strand) for seq, strand in zip(seq_list, strands)]
+
+    def _extract_fixed_len(self, interval, anchor, sample_id, phase):
+        fixed_len=True
+        # first, we try the sequence extraction with variants in the interval
+        variants=self.vcf.fetch_variants(interval, sample_id, phase)
+        min_anchor, anchor, istart, iend, upstream_variants, downstream_variants = self.variant_extractor._extract_first_half(
+            interval, variants, anchor, fixed_len)
+        
+        # We iteratively extend the interval if the interval is insufficient to get the fixed-length sequence due to deletions
+        downstream_additional_width = interval.start - istart
+        if downstream_additional_width > 0:
+            istart = interval.start
+        while downstream_additional_width > 0:
+            downstream_variants, istart, downstream_additional_width = self._add_downstream_variants(
+                sample_id, phase, downstream_variants, interval.chrom, istart, downstream_additional_width)
+        
+        upstream_additional_width = iend - interval.end
+        if upstream_additional_width > 0:
+            iend = interval.end
+        while upstream_additional_width > 0:
+            upstream_variants, iend, upstream_additional_width = self._add_upstream_variants(
+                sample_id, phase, upstream_variants, interval.chrom, iend, upstream_additional_width)
+        
+        # Getting the sequence
+        seq, new_anchor = self.variant_extractor._extract_second_half(
+            interval, (min_anchor, anchor, istart, iend, upstream_variants, downstream_variants), fixed_len)
+        return (seq, anchor, new_anchor)
+
+    def _add_downstream_variants(self, sample_id, phase, downstream_variants, chrom, istart, additional_width):
         # Get additional downstream variants
         # We don't have to calculate the istart/iend precisely, 
         # rather we'd like to update istart so that (anchor - istart) got equal to or larger than the required width
         new_istart = istart - additional_width
         add_down_variants = self.vcf.fetch_variants(Interval(chrom, max(0, new_istart), max(0, istart)), sample_id, phase)
         add_down_variants = list(self.variant_extractor._variant_to_sequence(add_down_variants))
+        # For many cases, variants are already coordinate-sorted
+        add_down_variants.reverse()
         add_down_variants = sorted(
             filter(lambda x: x[0].end <= istart, add_down_variants),
             key=lambda x: x[0].start,
@@ -437,11 +535,6 @@ class SingleSeqVCFSeqExtractor(_BaseVCFSeqExtractor):
         new_add_width = 0
         for ref, alt in add_down_variants:
             new_add_width -= len(alt) - len(ref)
-            if ref.end > anchor:
-                # This function is called only when there are some downstream deletions in the previous interval.
-                # Therefore, if the end position is larger than the anchor position, the variants must be overlapped with
-                # at least one deletions.
-                raise ValueError('There are at least two overlapped variants (Note that the consistency of variants is not routinely checked in this function)')
         return (downstream_variants, new_istart, new_add_width)
 
     def _add_upstream_variants(self, sample_id, phase, upstream_variants, chrom, iend, additional_width):

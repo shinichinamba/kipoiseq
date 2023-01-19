@@ -194,13 +194,18 @@ def test_extract(variant_seq_extractor):
         interval, variants, anchor=10, fixed_len=True)
     assert seq == 'NAC'
 
-    interval = Interval('chr1', 27, 30, strand='+')
+    interval2 = Interval('chr1', 27, 30, strand='+')
     seq = variant_seq_extractor.extract(
-        interval, variants, anchor=30, fixed_len=False)
+        interval2, variants, anchor=30, fixed_len=False)
     assert seq == 'TA'
     seq = variant_seq_extractor.extract(
-        interval, variants, anchor=30, fixed_len=True)
+        interval2, variants, anchor=30, fixed_len=True)
     assert seq == 'ATA'
+    
+    interval3 = Interval('chr1', -1, 2, strand='-')
+    seq_list = variant_seq_extractor.batch_extract(
+        [interval, interval2, interval3], variants, anchors=[10, 30, 10], fixed_len=True)
+    assert seq_list == ['NAC', 'ATA', 'GTN']
 
 @pytest.fixture
 def single_variant_vcf_seq_extractor():
@@ -234,7 +239,9 @@ def test_single_seq_vcf_seq_extract_phased(single_seq_vcf_seq_extractor_phased):
     seq = single_seq_vcf_seq_extractor_phased.extract(interval, anchor=24, sample_id='NA00002', phase=1, fixed_len=True)
     assert seq == 'GATGC'
     
-    interval = Interval('chr1', 45, 50)
-    seq = single_seq_vcf_seq_extractor_phased.extract(interval, anchor=50, sample_id='NA00002', phase=1, fixed_len=True)
+    interval2 = Interval('chr1', 45, 50)
+    seq = single_seq_vcf_seq_extractor_phased.extract(interval2, anchor=50, sample_id='NA00002', phase=1, fixed_len=True)
     assert seq == 'TTGTA'
-
+    
+    seq_list = single_seq_vcf_seq_extractor_phased.batch_extract([interval, interval2], anchors=[24, 50], sample_id='NA00002', phase=1, fixed_len=True)
+    assert seq == ['GATGC', 'TTGTA']
