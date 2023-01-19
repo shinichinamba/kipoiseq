@@ -244,4 +244,4 @@ def test_single_seq_vcf_seq_extract_phased(single_seq_vcf_seq_extractor_phased):
     assert seq == 'TTGTA'
     
     seq_list = single_seq_vcf_seq_extractor_phased.batch_extract([interval, interval2], anchors=[24, 50], sample_id='NA00002', phase=1, fixed_len=True)
-    assert seq == ['GATGC', 'TTGTA']
+    assert seq_list == ['GATGC', 'TTGTA']
