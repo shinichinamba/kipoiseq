@@ -257,7 +257,7 @@ class VariantSeqExtractor(BaseExtractor):
         down_sb = self._downstream_builder(
             downstream_variants, interval, min_anchor, istart)
 
-        up_sb, anchor = self._upstream_builder(
+        up_sb, new_anchor = self._upstream_builder(
             upstream_variants, interval, min_anchor, iend, anchor)
 
         # 5. fetch the sequence and restore intervals in builder
@@ -271,11 +271,13 @@ class VariantSeqExtractor(BaseExtractor):
         up_str = up_sb.concat()
 
         anchor_diff = len(down_str) - min_anchor
-        anchor = [anc + anchor_diff for anc in anchor]
+        new_anchor = [anc + anchor_diff for anc in new_anchor]
 
         if fixed_len:
+            max_plus = max([n - o for n, o in zip(new_anchor, anchor)])
+            cut_interval = Interval(interval.chrom, interval.start, interval.end + max_plus)
             down_str, up_str = self._cut_to_fix_len(
-                down_str, up_str, interval, min_anchor)
+                down_str, up_str, cut_interval, min_anchor)
 
         seq = down_str + up_str
 
@@ -285,9 +287,9 @@ class VariantSeqExtractor(BaseExtractor):
             # reverse-complement
             seq = complement(seq)[::-1]
             seq_len = len(seq)
-            anchor = [seq_len - anc for anc in anchor]
+            new_anchor = [seq_len - anc for anc in new_anchor]
 
-        return (seq, anchor)
+        return (seq, new_anchor)
     
     @staticmethod
     def _rc_if_strand(seq, strand):
