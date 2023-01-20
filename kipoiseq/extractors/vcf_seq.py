@@ -259,6 +259,7 @@ class VariantSeqExtractor(BaseExtractor):
 
         up_sb, new_anchor = self._upstream_builder(
             upstream_variants, interval, min_anchor, iend, anchor)
+        max_plus = max([n - o for n, o in zip(new_anchor, anchor)])
 
         # 5. fetch the sequence and restore intervals in builder
         seq = self._fetch(interval, istart, iend, error_if_invalid = not fixed_len)
@@ -274,7 +275,6 @@ class VariantSeqExtractor(BaseExtractor):
         new_anchor = [anc + anchor_diff for anc in new_anchor]
 
         if fixed_len:
-            max_plus = max([n - o for n, o in zip(new_anchor, anchor)])
             cut_interval = Interval(interval.chrom, interval.start, interval.end + max_plus)
             down_str, up_str = self._cut_to_fix_len(
                 down_str, up_str, cut_interval, min_anchor)
