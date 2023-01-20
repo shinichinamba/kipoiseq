@@ -271,13 +271,13 @@ class VariantSeqExtractor(BaseExtractor):
         down_str = down_sb.concat()
         up_str = up_sb.concat()
 
-        anchor_diff = len(down_str) - min_anchor
-        new_anchor = [anc + anchor_diff for anc in new_anchor]
-
         if fixed_len:
             cut_interval = Interval(interval.chrom, interval.start, interval.end + max_plus)
             down_str, up_str = self._cut_to_fix_len(
                 down_str, up_str, cut_interval, min_anchor)
+
+        anchor_diff = len(down_str) - min_anchor
+        new_anchor = [anc + anchor_diff for anc in new_anchor]
 
         seq = down_str + up_str
 
